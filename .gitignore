@@ -1,0 +1,22 @@
+build/
+.gradle/
+output/
+config.json
+*.pdf
+
+# JMeter generated files
+jmeter/report/
+jmeter/results.jtl
+jmeter.log
+*.jtl
+
+# JMeter default test plan
+Test Plan.jmx
+
+# Claude Code
+.claude/
+
+# IDE
+.idea/
+*.iml
+.vscode/
