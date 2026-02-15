@@ -29,5 +29,5 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 run {
-    standardInput = System.in
+    args = ['--server']
 }

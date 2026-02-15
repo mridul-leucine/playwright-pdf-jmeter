@@ -21,6 +21,11 @@
             <stringProp name="Argument.value">1616367803</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
+          <elementProp name="job_ids" elementType="Argument">
+            <stringProp name="Argument.name">job_ids</stringProp>
+            <stringProp name="Argument.value">722492974613180416,722485307568074752</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
         </collectionProp>
       </elementProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
@@ -38,19 +43,17 @@
         </elementProp>
       </ThreadGroup>
       <hashTree>
-        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Job IDs CSV">
-          <stringProp name="delimiter">,</stringProp>
-          <stringProp name="fileEncoding">UTF-8</stringProp>
-          <stringProp name="filename">jmeter/job-ids.csv</stringProp>
-          <boolProp name="ignoreFirstLine">false</boolProp>
-          <boolProp name="quotedData">false</boolProp>
-          <boolProp name="recycle">true</boolProp>
-          <stringProp name="shareMode">shareMode.all</stringProp>
-          <boolProp name="stopThread">false</boolProp>
-          <stringProp name="variableNames">jobId</stringProp>
-        </CSVDataSet>
+        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Pick Job ID" enabled="true">
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">def ids = vars.get("job_ids").split(",")
+def idx = ctx.getThreadNum() % ids.length
+vars.put("jobId", ids[idx].trim())</stringProp>
+        </JSR223PreProcessor>
         <hashTree/>
-        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Fetch Job Data">
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Fetch Job Data" enabled="true">
           <intProp name="HTTPSampler.connect_timeout">5000</intProp>
           <intProp name="HTTPSampler.response_timeout">30000</intProp>
           <stringProp name="HTTPSampler.domain">api.qa.platform.leucinetech.com</stringProp>
@@ -66,7 +69,7 @@
           </elementProp>
         </HTTPSamplerProxy>
         <hashTree>
-          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="API Headers">
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="API Headers" enabled="true">
             <collectionProp name="HeaderManager.headers">
               <elementProp name="" elementType="Header">
                 <stringProp name="Header.name">Authorization</stringProp>
@@ -79,7 +82,7 @@
             </collectionProp>
           </HeaderManager>
           <hashTree/>
-          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert API 200">
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Assert API 200" enabled="true">
             <collectionProp name="Asserion.test_strings">
               <stringProp name="49586">200</stringProp>
             </collectionProp>
@@ -89,7 +92,7 @@
             <intProp name="Assertion.test_type">8</intProp>
           </ResponseAssertion>
           <hashTree/>
-          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract Job Response">
+          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract Job Response" enabled="true">
             <stringProp name="JSONPostProcessor.referenceNames">jobResponse</stringProp>
             <stringProp name="JSONPostProcessor.jsonPathExprs">$</stringProp>
             <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
@@ -97,7 +100,7 @@
           </JSONPostProcessor>
           <hashTree/>
         </hashTree>
-        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Render PDF">
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Render PDF" enabled="true">
           <intProp name="HTTPSampler.connect_timeout">5000</intProp>
           <intProp name="HTTPSampler.response_timeout">120000</intProp>
           <stringProp name="HTTPSampler.domain">localhost</stringProp>
@@ -155,6 +158,35 @@
             <boolProp name="Assertion.assume_success">false</boolProp>
             <intProp name="Assertion.test_type">2</intProp>
           </ResponseAssertion>
+          <hashTree/>
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Save PDF to File" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script">
+import java.nio.file.*
+
+def outputDir = new File(&quot;jmeter/pdf-output&quot;)
+if (!outputDir.exists()) outputDir.mkdirs()
+
+def threadNum = ctx.getThreadNum()
+def jobId = vars.get(&quot;jobId&quot;) ?: &quot;unknown&quot;
+def fileName = &quot;job-${jobId}-thread${threadNum}.pdf&quot;
+def outFile = new File(outputDir, fileName)
+
+// Save PDF bytes
+def responseBytes = prev.getResponseData()
+Files.write(outFile.toPath(), responseBytes)
+
+def absPath = outFile.getAbsolutePath()
+def fileUri = &quot;file:///&quot; + absPath.replace(&quot;\\\\&quot;, &quot;/&quot;)
+
+// Replace response data with clickable link
+prev.setResponseData(&quot;PDF saved to: ${absPath}\n\nOpen: ${fileUri}\n\nSize: ${responseBytes.length} bytes&quot;, &quot;UTF-8&quot;)
+prev.setDataType(&quot;text&quot;)
+</stringProp>
+          </JSR223PostProcessor>
           <hashTree/>
         </hashTree>
         <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">

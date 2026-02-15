@@ -16,7 +16,7 @@ JMeter (with token/headers)
 
 1. Install Playwright browsers (first time):
    ```bash
-   ./gradlew run --args="--server"
+   ./gradlew run
    ```
 
 2. Add job IDs to `jmeter/job-ids.csv` (one per line).
@@ -27,8 +27,8 @@ JMeter (with token/headers)
 
 **Start the PDF server:**
 ```bash
-./gradlew run --args="--server"
-./gradlew run --args="--server --port=9090"
+./gradlew run
+./gradlew run --args="--port=9090"
 ```
 
 **Manual test with curl:**
@@ -63,5 +63,4 @@ Open `jmeter/pdf-local-test.jmx` in JMeter and run.
 
 | Flag | Description |
 |------|-------------|
-| `--server` | Start HTTP server (required) |
 | `--port=N` | Custom server port (default: 8080) |

@@ -476,7 +476,7 @@ public class LocalPdfRenderer {
         return "<div style=\"width:100%; background:#eeeeee; padding:10px 20px; font-size:10px;\">"
             + "<table style=\"width:100%;\"><tr>"
             + "<td style=\"text-align:left;\">Streem - Job Report</td>"
-            + "<td style=\"text-align:right;\">Locally Rendered (Emoji Fix Demo)</td>"
+            + "<td style=\"text-align:right;\">Locally Rendered</td>"
             + "</tr></table>"
             + "</div>";
     }
@@ -484,7 +484,7 @@ public class LocalPdfRenderer {
     private static String buildFooterTemplate() {
         return "<div style=\"width:100%; background:#eeeeee; font-size:9px; padding:8px 20px;\">"
             + "<table style=\"width:100%;\"><tr>"
-            + "<td style=\"text-align:left;\">Generated locally with Playwright + Noto Color Emoji</td>"
+            + "<td style=\"text-align:left;\">Generated with Playwright</td>"
             + "<td style=\"text-align:right;\">"
             + "<span style=\"display:inline-block; background:#bababa; border-radius:4px; padding:2px 8px; font-weight:bold;\">"
             + "<span class=\"pageNumber\"></span> / <span class=\"totalPages\"></span>"

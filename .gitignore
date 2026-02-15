@@ -6,6 +6,7 @@ output/
 
 # JMeter generated files
 jmeter/report/
+jmeter/pdf-output/
 jmeter/results.jtl
 jmeter.log
 *.jtl
