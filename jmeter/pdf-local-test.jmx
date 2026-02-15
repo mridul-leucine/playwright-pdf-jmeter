@@ -23,7 +23,7 @@
           </elementProp>
           <elementProp name="job_ids" elementType="Argument">
             <stringProp name="Argument.name">job_ids</stringProp>
-            <stringProp name="Argument.value">722492974613180416,722485307568074752</stringProp>
+            <stringProp name="Argument.value">722492974613180416</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
