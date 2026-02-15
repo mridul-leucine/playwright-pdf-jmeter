@@ -1,37 +1,67 @@
-# Playwright PDF + JMeter Load Test
+# Playwright PDF Renderer + JMeter Load Test
 
-Renders job report PDFs locally via Playwright and exposes an HTTP endpoint for JMeter load testing.
+A thin Playwright-based PDF rendering server. JMeter owns all API interaction (fetching job data, authentication); the Java server is a pure PDF renderer that accepts job JSON via POST.
+
+## Architecture
+
+```
+JMeter (with token/headers)
+  → GET Streem API /jobs/{id}    (fetch job JSON)
+  → POST localhost:8080/pdf      (send JSON body + auth headers)
+  → Java renders PDF via Playwright
+  → returns PDF bytes
+```
 
 ## Setup
 
-1. Add your token in `config.json`:
-   ```json
-   { "token": "Bearer eyJ..." }
+1. Install Playwright browsers (first time):
+   ```bash
+   ./gradlew run --args="--server"
    ```
-   Or run `./gradlew run --args="--login"` to login via browser.
 
-2. Install Playwright browsers (first time): `./gradlew run --args="--login"`
+2. Add job IDs to `jmeter/job-ids.csv` (one per line).
+
+3. Update the `token` variable in the JMeter test plan (`jmeter/pdf-local-test.jmx`).
 
 ## Usage
 
-**Start HTTP server (for JMeter):**
+**Start the PDF server:**
 ```bash
 ./gradlew run --args="--server"
+./gradlew run --args="--server --port=9090"
 ```
 
-**Render a single PDF:**
+**Manual test with curl:**
 ```bash
-./gradlew run --args="--jobId=722492974613180416"
+curl -X POST http://localhost:8080/pdf \
+  -H "Authorization: Bearer eyJ..." \
+  -H "facilityId: 1616367803" \
+  -H "Content-Type: application/json" \
+  -d @job-response.json \
+  -o report.pdf
 ```
 
-**JMeter test:**
+**JMeter load test:**
 Open `jmeter/pdf-local-test.jmx` in JMeter and run.
+
+## Server API
+
+### `POST /pdf`
+
+**Headers (required):**
+| Header | Description |
+|--------|-------------|
+| `Authorization` | Bearer token for image downloads |
+| `facilityId` | Facility ID for image downloads |
+| `Content-Type` | `application/json` |
+
+**Body:** Raw JSON — either the full API response (`{"data": {...}}`) or the job object directly.
+
+**Response:** `application/pdf` bytes.
 
 ## Flags
 
 | Flag | Description |
 |------|-------------|
-| `--server` | Start HTTP server on port 8080 |
-| `--port=N` | Custom server port |
-| `--login` | Browser login to get token |
-| `--jobId=ID` | Render specific job |
+| `--server` | Start HTTP server (required) |
+| `--port=N` | Custom server port (default: 8080) |

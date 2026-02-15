@@ -1,5 +1,7 @@
 package com.leucine.pdfdemo;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
@@ -11,13 +13,12 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 public class PdfHttpServer {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final int port;
     private HttpServer server;
@@ -29,13 +30,6 @@ public class PdfHttpServer {
     }
 
     public void start() throws Exception {
-        // Read token once at startup
-        String token = TokenManager.getOrRefreshToken();
-        if (token == null) {
-            throw new IllegalStateException(
-                "Could not obtain a valid token. Run with --login first.");
-        }
-
         // Launch a single Playwright browser instance (reused across all requests)
         playwright = Playwright.create();
         browser = playwright.chromium().launch(
@@ -44,42 +38,55 @@ public class PdfHttpServer {
                 .setArgs(List.of("--no-sandbox", "--disable-dev-shm-usage")));
 
         server = HttpServer.create(new InetSocketAddress(port), 0);
-        server.createContext("/pdf", exchange -> handlePdf(exchange, token));
+        server.createContext("/pdf", this::handlePdf);
         server.setExecutor(null); // default single-threaded executor
         server.start();
 
         System.out.printf("%n  Server running on http://localhost:%d%n", port);
-        System.out.println("  Endpoint: GET /pdf?jobId={jobId}");
+        System.out.println("  Endpoint: POST /pdf (JSON body + Authorization/facilityId headers)");
         System.out.println("  Press Ctrl+C to stop.");
 
         Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
     }
 
-    private void handlePdf(HttpExchange exchange, String token) {
+    private void handlePdf(HttpExchange exchange) {
         try {
-            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-                sendError(exchange, 405, "Method Not Allowed");
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendError(exchange, 405, "Method Not Allowed — use POST");
                 return;
             }
 
-            Map<String, String> params = parseQuery(exchange.getRequestURI().getRawQuery());
-            String jobId = params.get("jobId");
-            if (jobId == null || jobId.isBlank()) {
-                sendError(exchange, 400, "Missing required parameter: jobId");
+            // Read Authorization and facilityId from request headers
+            String token = exchange.getRequestHeaders().getFirst("Authorization");
+            String facilityId = exchange.getRequestHeaders().getFirst("facilityId");
+            if (token == null || token.isBlank()) {
+                sendError(exchange, 400, "Missing required header: Authorization");
+                return;
+            }
+            if (facilityId == null || facilityId.isBlank()) {
+                sendError(exchange, 400, "Missing required header: facilityId");
                 return;
             }
 
-            System.out.printf("  [%s] GET /pdf?jobId=%s%n",
-                java.time.LocalTime.now().toString().substring(0, 8), jobId);
+            // Read JSON body
+            byte[] bodyBytes = exchange.getRequestBody().readAllBytes();
+            if (bodyBytes.length == 0) {
+                sendError(exchange, 400, "Empty request body — expected job JSON");
+                return;
+            }
+
+            JsonNode root = MAPPER.readTree(bodyBytes);
+            // Support both raw API response (with "data" wrapper) and direct job object
+            JsonNode jobData = root.has("data") ? root.get("data") : root;
+
+            String jobCode = jobData.path("code").asText("unknown");
+            System.out.printf("  [%s] POST /pdf — job %s%n",
+                java.time.LocalTime.now().toString().substring(0, 8), jobCode);
 
             long start = System.currentTimeMillis();
 
-            // Fetch HTML from API
-            String html = LocalPdfRenderer.fetchAndBuildHtml(token, jobId);
-            if (html == null) {
-                sendError(exchange, 502, "Failed to fetch job data from API");
-                return;
-            }
+            // Build HTML from the provided JSON
+            String html = LocalPdfRenderer.buildHtmlFromJson(jobData, token, facilityId);
 
             // Render PDF using a fresh page from the shared browser
             byte[] pdf;
@@ -103,7 +110,7 @@ public class PdfHttpServer {
             // Return PDF
             exchange.getResponseHeaders().set("Content-Type", "application/pdf");
             exchange.getResponseHeaders().set("Content-Disposition",
-                "inline; filename=\"report-" + jobId + ".pdf\"");
+                "inline; filename=\"report-" + jobCode + ".pdf\"");
             exchange.sendResponseHeaders(200, pdf.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(pdf);
@@ -132,19 +139,5 @@ public class PdfHttpServer {
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(body);
         }
-    }
-
-    private static Map<String, String> parseQuery(String query) {
-        Map<String, String> params = new LinkedHashMap<>();
-        if (query == null || query.isBlank()) return params;
-        for (String pair : query.split("&")) {
-            int idx = pair.indexOf('=');
-            if (idx > 0) {
-                String key = URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8);
-                String value = URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8);
-                params.put(key, value);
-            }
-        }
-        return params;
     }
 }

@@ -2,7 +2,6 @@ build/
 bin/
 .gradle/
 output/
-config.json
 *.pdf
 
 # JMeter generated files

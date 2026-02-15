@@ -1,11 +1,7 @@
 package com.leucine.pdfdemo;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.microsoft.playwright.Browser;
-import com.microsoft.playwright.BrowserContext;
-import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.Margin;
 import com.microsoft.playwright.options.WaitUntilState;
 
@@ -13,63 +9,28 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
-import java.util.List;
 import java.util.Set;
 
 public class LocalPdfRenderer {
 
-    public static void run(String token, String jobId) throws Exception {
-        String html = fetchAndBuildHtml(token, jobId);
-        if (html == null) return;
+    private static final int DOWNLOAD_TIMEOUT_SECONDS = 30;
 
-        Files.createDirectories(DemoConfig.OUTPUT_DIR);
-        long start = System.currentTimeMillis();
-
-        try (Playwright pw = Playwright.create()) {
-            Browser browser = pw.chromium().launch(
-                new BrowserType.LaunchOptions()
-                    .setHeadless(true)
-                    .setArgs(List.of("--no-sandbox", "--disable-dev-shm-usage")));
-            BrowserContext context = browser.newContext();
-            Page page = context.newPage();
-
-            byte[] pdf = renderPdfBytes(page, html);
-            long elapsed = System.currentTimeMillis() - start;
-
-            String ts = Instant.now().atZone(ZoneId.systemDefault())
-                .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            Path output = DemoConfig.OUTPUT_DIR.resolve("report_" + ts + ".pdf");
-            Files.write(output, pdf);
-
-            context.close();
-            browser.close();
-
-            System.out.printf("OK — %,.1f KB in %,d ms → %s%n", pdf.length / 1024.0, elapsed, output.toAbsolutePath());
-        }
-    }
-
-    static String fetchAndBuildHtml(String token, String jobId) throws Exception {
-        JsonNode response = ApiClient.apiGet(DemoConfig.STREEM_API + "/jobs/" + jobId, token);
-        if (response == null) {
-            System.out.println("ERROR: Could not fetch job data.");
-            return null;
-        }
-
-        JsonNode jobData = response.get("data");
-        String jobCode = jobData.path("code").asText(jobId);
+    /**
+     * Builds the full HTML report from pre-fetched job JSON data.
+     * The token and facilityId are used only for downloading inline images.
+     */
+    static String buildHtmlFromJson(JsonNode jobData, String token, String facilityId) {
+        String jobCode = jobData.path("code").asText("?");
         String state = jobData.path("state").asText("?");
         String checklistName = jobData.path("checklist").path("name").asText("-");
         String checklistCode = jobData.path("checklist").path("code").asText("-");
 
-        return buildFullHtml(jobData, jobCode, state, checklistName, checklistCode, token);
+        return buildFullHtml(jobData, jobCode, state, checklistName, checklistCode, token, facilityId);
     }
 
     static byte[] renderPdfBytes(Page page, String html) {
@@ -99,7 +60,8 @@ public class LocalPdfRenderer {
     }
 
     private static String buildFullHtml(JsonNode jobData, String jobCode, String state,
-                                         String checklistName, String checklistCode, String token) {
+                                         String checklistName, String checklistCode,
+                                         String token, String facilityId) {
         StringBuilder content = new StringBuilder();
 
         // Process Details section
@@ -294,7 +256,7 @@ public class LocalPdfRenderer {
                                 if (resp.isArray() && resp.size() > 0) {
                                     // Find the best response entry (one with actual data/medias)
                                     JsonNode r = findBestResponse(p, resp);
-                                    value = extractParameterValue(p, r, token);
+                                    value = extractParameterValue(p, r, token, facilityId);
                                     JsonNode modBy = r.path("audit").path("modifiedBy");
                                     if (!modBy.isMissingNode() && modBy.has("firstName")) {
                                         person = formatUser(modBy);
@@ -325,12 +287,6 @@ public class LocalPdfRenderer {
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
         "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg");
 
-    /**
-     * Finds the best response entry from a multi-entry response array.
-     * For media/signature/file types, picks the entry that has medias.
-     * Otherwise picks the first entry with a non-empty value.
-     * Falls back to resp.get(0).
-     */
     private static JsonNode findBestResponse(JsonNode param, JsonNode resp) {
         String type = param.path("type").asText("");
         boolean isMediaType = "MEDIA".equals(type) || "SIGNATURE".equals(type) || "FILE_UPLOAD".equals(type);
@@ -344,13 +300,11 @@ public class LocalPdfRenderer {
             }
         }
 
-        // For non-media types, pick first entry with a non-empty, non-null value
         for (JsonNode r : resp) {
             String val = r.path("value").asText("");
             if (!val.isEmpty() && !"null".equals(val)) {
                 return r;
             }
-            // Also check choices
             JsonNode choices = r.path("choices");
             if (choices.isArray() && choices.size() > 0) {
                 return r;
@@ -360,11 +314,11 @@ public class LocalPdfRenderer {
         return resp.get(0);
     }
 
-    private static String extractParameterValue(JsonNode param, JsonNode response, String token) {
+    private static String extractParameterValue(JsonNode param, JsonNode response,
+                                                  String token, String facilityId) {
         String type = param.path("type").asText("");
         String value = response.path("value").asText("");
 
-        // For media/signature/file types, embed images inline (check before null/empty guard since value is often "null" for these)
         if ("MEDIA".equals(type) || "SIGNATURE".equals(type) || "FILE_UPLOAD".equals(type)) {
             JsonNode medias = response.path("medias");
             if (medias.isArray() && medias.size() > 0) {
@@ -380,7 +334,7 @@ public class LocalPdfRenderer {
 
                     if (isImage) {
                         System.out.printf("  Embedding image: %s%n", name);
-                        String dataUri = downloadAsBase64(link, token);
+                        String dataUri = downloadAsBase64(link, token, facilityId);
                         if (dataUri != null) {
                             String cssClass = "SIGNATURE".equals(type) ? "pdf-signature" : "pdf-inline-image";
                             sb.append("<img src=\"").append(dataUri).append("\" class=\"").append(cssClass)
@@ -399,7 +353,6 @@ public class LocalPdfRenderer {
         }
 
         if (value.isEmpty() || "null".equals(value)) {
-            // Check choices for select/checklist types
             JsonNode choices = response.path("choices");
             if (choices.isArray() && choices.size() > 0) {
                 StringBuilder sb = new StringBuilder();
@@ -428,18 +381,18 @@ public class LocalPdfRenderer {
         return false;
     }
 
-    private static String downloadAsBase64(String url, String token) {
+    private static String downloadAsBase64(String url, String token, String facilityId) {
         try {
             HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(DemoConfig.API_TIMEOUT_SECONDS))
+                .connectTimeout(Duration.ofSeconds(DOWNLOAD_TIMEOUT_SECONDS))
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
 
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Authorization", token)
-                .header("facilityId", DemoConfig.FACILITY_ID)
-                .timeout(Duration.ofSeconds(DemoConfig.API_TIMEOUT_SECONDS))
+                .header("facilityId", facilityId)
+                .timeout(Duration.ofSeconds(DOWNLOAD_TIMEOUT_SECONDS))
                 .GET()
                 .build();
 
@@ -447,7 +400,6 @@ public class LocalPdfRenderer {
             if (response.statusCode() == 200) {
                 byte[] bytes = response.body();
                 String contentType = response.headers().firstValue("content-type").orElse("image/png");
-                // Strip any charset or params from content-type
                 if (contentType.contains(";")) {
                     contentType = contentType.substring(0, contentType.indexOf(';')).trim();
                 }
@@ -539,7 +491,6 @@ public class LocalPdfRenderer {
             + "</span></td></tr></table></div>";
     }
 
-    // The same CSS from job-pdf-report.html template, with the FIXED emoji font
     private static final String TEMPLATE_PREFIX = """
         <html lang="en">
         <head>
