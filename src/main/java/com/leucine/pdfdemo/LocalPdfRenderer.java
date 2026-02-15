@@ -24,26 +24,13 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Fetches job data from the QA API and renders a PDF locally using Playwright.
- * This uses the same template CSS as the backend but renders on the local machine,
- * so the fixed 'Noto Color Emoji' font takes effect without needing a backend deploy.
- */
 public class LocalPdfRenderer {
 
     public static void run(String token, String jobId) throws Exception {
-        System.out.println("\n" + "=".repeat(60));
-        System.out.println("  LOCAL PDF RENDERING (Playwright + Fixed Emoji Font)");
-        System.out.println("=".repeat(60));
-
-        // 1. Fetch job data and build HTML
         String html = fetchAndBuildHtml(token, jobId);
         if (html == null) return;
 
-        // 2. Render PDF locally with Playwright
-        System.out.println("  Rendering PDF with local Playwright...");
         Files.createDirectories(DemoConfig.OUTPUT_DIR);
-
         long start = System.currentTimeMillis();
 
         try (Playwright pw = Playwright.create()) {
@@ -55,7 +42,6 @@ public class LocalPdfRenderer {
             Page page = context.newPage();
 
             byte[] pdf = renderPdfBytes(page, html);
-
             long elapsed = System.currentTimeMillis() - start;
 
             String ts = Instant.now().atZone(ZoneId.systemDefault())
@@ -66,24 +52,14 @@ public class LocalPdfRenderer {
             context.close();
             browser.close();
 
-            System.out.printf("\n  Result:%n");
-            System.out.printf("    Status:    OK%n");
-            System.out.printf("    Size:      %,.1f KB (%,d bytes)%n", pdf.length / 1024.0, pdf.length);
-            System.out.printf("    Time:      %,d ms%n", elapsed);
-            System.out.printf("    Saved:     %s%n", output.toAbsolutePath());
-            System.out.printf("    Emojis:    Rendered with 'Noto Color Emoji' (fixed font)%n");
+            System.out.printf("OK — %,.1f KB in %,d ms → %s%n", pdf.length / 1024.0, elapsed, output.toAbsolutePath());
         }
     }
 
-    /**
-     * Fetches job data from the API and builds the full HTML string (including sample appendices).
-     * Returns null if the API call fails.
-     */
     static String fetchAndBuildHtml(String token, String jobId) throws Exception {
-        System.out.printf("\n  Fetching job %s from QA API...%n", jobId);
         JsonNode response = ApiClient.apiGet(DemoConfig.STREEM_API + "/jobs/" + jobId, token);
         if (response == null) {
-            System.out.println("  ERROR: Could not fetch job data.");
+            System.out.println("ERROR: Could not fetch job data.");
             return null;
         }
 
@@ -93,16 +69,9 @@ public class LocalPdfRenderer {
         String checklistName = jobData.path("checklist").path("name").asText("-");
         String checklistCode = jobData.path("checklist").path("code").asText("-");
 
-        System.out.printf("  Job: %s | State: %s | Process: %s%n", jobCode, state, checklistName);
-        System.out.println("  Building HTML from job data...");
-
         return buildFullHtml(jobData, jobCode, state, checklistName, checklistCode, token);
     }
 
-    /**
-     * Renders the given HTML to PDF bytes using an already-open Playwright Page.
-     * Reusable by LocalBenchmark for tight-loop rendering.
-     */
     static byte[] renderPdfBytes(Page page, String html) {
         page.setContent(html, new Page.SetContentOptions()
             .setWaitUntil(WaitUntilState.NETWORKIDLE));
@@ -349,210 +318,8 @@ public class LocalPdfRenderer {
             }
         }
 
-        // Add sample appendices to pad PDF to ~10 pages
-        content.append(buildSampleAppendices());
-
         // Wrap content in the full template
         return TEMPLATE_PREFIX + content.toString() + TEMPLATE_SUFFIX;
-    }
-
-    private static String buildSampleAppendices() {
-        StringBuilder sb = new StringBuilder();
-
-        // ── Appendix A – Embedded Images Gallery (~2 pages) ──
-        sb.append("<div class=\"page-break\"></div>");
-        sb.append(sectionTitle("Appendix A \u2013 Embedded Images Gallery"));
-        sb.append("<p style=\"margin:4mm 0;\">The following sample images demonstrate inline embedding support for media-rich job reports.</p>");
-
-        String[][] imageSpecs = {
-            {"Sample Photo 1",    "#2196F3", "#BBDEFB"},
-            {"Equipment Check",   "#4CAF50", "#C8E6C9"},
-            {"Site Inspection",   "#FF9800", "#FFE0B2"},
-            {"Material Receipt",  "#9C27B0", "#E1BEE7"},
-            {"Safety Signage",    "#F44336", "#FFCDD2"},
-            {"Final Verification","#607D8B", "#CFD8DC"},
-        };
-
-        sb.append("<div style=\"display:flex; flex-wrap:wrap; gap:6mm; margin:4mm 0;\">");
-        for (String[] spec : imageSpecs) {
-            appendImageCard(sb, buildThumbnailSvg(spec[0], spec[1], spec[2]),
-                spec[0], "max-width:220px;max-height:160px;");
-        }
-        sb.append("</div>");
-
-        sb.append("<div class=\"page-break\"></div>");
-        sb.append("<p style=\"margin:4mm 0; font-weight:600;\">Gallery \u2013 Enlarged Views</p>");
-        sb.append("<div style=\"display:flex; flex-wrap:wrap; gap:6mm; margin:4mm 0;\">");
-        for (int i = 0; i < 4; i++) {
-            String label = imageSpecs[i][0] + " (Enlarged)";
-            appendImageCard(sb, buildEnlargedSvg(imageSpecs[i][0], imageSpecs[i][1], imageSpecs[i][2]),
-                label, "max-width:320px;max-height:220px;");
-        }
-        sb.append("</div>");
-
-        // ── Appendix B – Signature Verification Log (~1 page) ──
-        sb.append("<div class=\"page-break\"></div>");
-        sb.append(sectionTitle("Appendix B \u2013 Signature Verification Log"));
-        sb.append("<p style=\"margin:4mm 0;\">Digital signature records for job completion verification.</p>");
-
-        String[][] signatories = {
-            {"Operator",   "Rajesh Kumar", "EMP-1042", "15 Feb 2026, 09:30 AM"},
-            {"Supervisor", "Priya Sharma", "EMP-0871", "15 Feb 2026, 10:15 AM"},
-            {"QA Manager", "Ankit Verma",  "EMP-0234", "15 Feb 2026, 11:00 AM"},
-            {"Shift Lead", "Meera Patel",  "EMP-0567", "15 Feb 2026, 11:45 AM"},
-        };
-
-        sb.append("<table class=\"parameter-table\">");
-        sb.append("<thead><tr><th style=\"width:18%\">Role</th><th style=\"width:22%\">Name</th>")
-            .append("<th style=\"width:12%\">Employee ID</th><th style=\"width:25%\">Signature</th>")
-            .append("<th style=\"width:23%\">Signed At</th></tr></thead><tbody>");
-        for (String[] sig : signatories) {
-            String sigUri = svgToDataUri(buildSignatureSvg(sig[1]));
-            sb.append("<tr>")
-                .append("<td>").append(escapeHtml(sig[0])).append("</td>")
-                .append("<td>").append(escapeHtml(sig[1])).append("</td>")
-                .append("<td>").append(escapeHtml(sig[2])).append("</td>")
-                .append("<td><img src=\"").append(sigUri).append("\" class=\"pdf-signature\" alt=\"Signature\"></td>")
-                .append("<td>").append(escapeHtml(sig[3])).append("</td>")
-                .append("</tr>");
-        }
-        sb.append("</tbody></table>");
-
-        // ── Appendix C – Detailed Observations (~2 pages) ──
-        sb.append("<div class=\"page-break\"></div>");
-        sb.append(sectionTitle("Appendix C \u2013 Detailed Observations"));
-        sb.append("<p style=\"margin:4mm 0;\">Sample inspection observations recorded during the job execution.</p>");
-
-        String[][] observations = {
-            {"OBS-001", "Temperature Check",    "36.5 \u00B0C",  "Within Range", "15 Feb 2026, 08:00 AM"},
-            {"OBS-002", "Humidity Level",        "45%",           "Normal",       "15 Feb 2026, 08:05 AM"},
-            {"OBS-003", "Equipment Calibration", "Pass",          "Verified",     "15 Feb 2026, 08:10 AM"},
-            {"OBS-004", "Raw Material Lot#",     "RM-2026-0451",  "Approved",     "15 Feb 2026, 08:15 AM"},
-            {"OBS-005", "pH Level",              "7.2",           "Within Spec",  "15 Feb 2026, 08:20 AM"},
-            {"OBS-006", "Pressure Reading",      "2.1 bar",       "Normal",       "15 Feb 2026, 08:25 AM"},
-            {"OBS-007", "Viscosity",             "340 cP",        "Within Range", "15 Feb 2026, 08:30 AM"},
-            {"OBS-008", "Particle Count",        "12 ppm",        "Below Limit",  "15 Feb 2026, 08:35 AM"},
-            {"OBS-009", "Weight Verification",   "500.3 g",       "Pass",         "15 Feb 2026, 08:40 AM"},
-            {"OBS-010", "Visual Inspection",     "No defects",    "Approved",     "15 Feb 2026, 08:45 AM"},
-            {"OBS-011", "Seal Integrity",        "Intact",        "Pass",         "15 Feb 2026, 08:50 AM"},
-            {"OBS-012", "Label Verification",    "Correct",       "Verified",     "15 Feb 2026, 08:55 AM"},
-            {"OBS-013", "Batch Yield",           "98.7%",         "Above Target", "15 Feb 2026, 09:00 AM"},
-            {"OBS-014", "Dissolution Rate",      "92% @ 30min",   "Within Spec",  "15 Feb 2026, 09:10 AM"},
-            {"OBS-015", "Moisture Content",      "2.1%",          "Within Limit", "15 Feb 2026, 09:15 AM"},
-            {"OBS-016", "Hardness Test",         "8.5 kP",        "Pass",         "15 Feb 2026, 09:20 AM"},
-            {"OBS-017", "Friability",            "0.3%",          "Below 1%",     "15 Feb 2026, 09:25 AM"},
-            {"OBS-018", "Disintegration Time",   "4 min 20 sec",  "Within Spec",  "15 Feb 2026, 09:30 AM"},
-            {"OBS-019", "Color Uniformity",      "Uniform",       "Approved",     "15 Feb 2026, 09:35 AM"},
-            {"OBS-020", "Odor Check",            "No off-odor",   "Pass",         "15 Feb 2026, 09:40 AM"},
-            {"OBS-021", "Microbial Limit",       "<10 CFU/g",     "Within Spec",  "15 Feb 2026, 09:45 AM"},
-            {"OBS-022", "Endotoxin Level",       "0.12 EU/mL",    "Below Limit",  "15 Feb 2026, 09:50 AM"},
-        };
-
-        sb.append("<div class=\"detail-panel\"><table class=\"detail-table\">");
-        sb.append("<tr><th style=\"width:12%\"><b>Obs. ID</b></th><th style=\"width:25%\"><b>Parameter</b></th>")
-            .append("<th style=\"width:18%\"><b>Value</b></th><th style=\"width:18%\"><b>Status</b></th>")
-            .append("<th style=\"width:27%\"><b>Recorded At</b></th></tr>");
-        for (String[] obs : observations) {
-            appendTableRow(sb, obs);
-        }
-        sb.append("</table></div>");
-
-        // ── Appendix D – Audit Trail (~2 pages) ──
-        sb.append("<div class=\"page-break\"></div>");
-        sb.append(sectionTitle("Appendix D \u2013 Audit Trail"));
-        sb.append("<p style=\"margin:4mm 0;\">Comprehensive audit log of all actions performed during this job.</p>");
-
-        String[][] auditEntries = {
-            {"15 Feb 2026, 07:45:00 AM", "Job Created",        "System",       "Job initialized from process template CL-2026-0089"},
-            {"15 Feb 2026, 07:45:01 AM", "Job Assigned",       "System",       "Auto-assigned to Shift A production team"},
-            {"15 Feb 2026, 07:50:12 AM", "Job Started",        "Rajesh Kumar", "Operator initiated job execution"},
-            {"15 Feb 2026, 07:55:30 AM", "Task Started",       "Rajesh Kumar", "Task 1.1 \u2013 Pre-production checks initiated"},
-            {"15 Feb 2026, 08:00:00 AM", "Parameter Updated",  "Rajesh Kumar", "Temperature reading recorded: 36.5 \u00B0C"},
-            {"15 Feb 2026, 08:05:00 AM", "Parameter Updated",  "Rajesh Kumar", "Humidity level recorded: 45%"},
-            {"15 Feb 2026, 08:10:00 AM", "Parameter Updated",  "Rajesh Kumar", "Equipment calibration verified: PASS"},
-            {"15 Feb 2026, 08:15:00 AM", "Parameter Updated",  "Rajesh Kumar", "Raw material lot RM-2026-0451 approved"},
-            {"15 Feb 2026, 08:20:15 AM", "Media Uploaded",     "Rajesh Kumar", "Equipment photo attached to Task 1.1"},
-            {"15 Feb 2026, 08:25:00 AM", "Parameter Updated",  "Rajesh Kumar", "pH level recorded: 7.2"},
-            {"15 Feb 2026, 08:30:00 AM", "Task Completed",     "Rajesh Kumar", "Task 1.1 completed with all parameters filled"},
-            {"15 Feb 2026, 08:35:00 AM", "Task Started",       "Rajesh Kumar", "Task 1.2 \u2013 In-process checks initiated"},
-            {"15 Feb 2026, 08:40:00 AM", "Parameter Updated",  "Rajesh Kumar", "Pressure reading: 2.1 bar"},
-            {"15 Feb 2026, 08:45:00 AM", "Parameter Updated",  "Rajesh Kumar", "Viscosity measurement: 340 cP"},
-            {"15 Feb 2026, 08:50:00 AM", "Parameter Updated",  "Rajesh Kumar", "Particle count: 12 ppm"},
-            {"15 Feb 2026, 08:55:00 AM", "Signature Captured", "Rajesh Kumar", "Operator signature recorded for Task 1.2"},
-            {"15 Feb 2026, 09:00:00 AM", "Task Completed",     "Rajesh Kumar", "Task 1.2 completed successfully"},
-            {"15 Feb 2026, 09:05:00 AM", "Review Requested",   "Rajesh Kumar", "Job submitted for supervisor review"},
-            {"15 Feb 2026, 09:15:00 AM", "Task Reviewed",      "Priya Sharma", "Supervisor approved Task 1.1 parameters"},
-            {"15 Feb 2026, 09:20:00 AM", "Task Reviewed",      "Priya Sharma", "Supervisor approved Task 1.2 parameters"},
-            {"15 Feb 2026, 09:30:00 AM", "Signature Captured", "Priya Sharma", "Supervisor sign-off recorded"},
-            {"15 Feb 2026, 10:00:00 AM", "QA Review Started",  "Ankit Verma",  "QA Manager began final quality review"},
-            {"15 Feb 2026, 10:15:00 AM", "Parameter Verified", "Ankit Verma",  "All critical parameters verified against specifications"},
-            {"15 Feb 2026, 10:30:00 AM", "Deviation Check",    "Ankit Verma",  "No deviations detected \u2013 all values within limits"},
-            {"15 Feb 2026, 10:45:00 AM", "Signature Captured", "Ankit Verma",  "QA Manager approval signature recorded"},
-            {"15 Feb 2026, 11:00:00 AM", "Shift Handover",     "Meera Patel",  "Shift Lead verified completion across all stages"},
-            {"15 Feb 2026, 11:15:00 AM", "Signature Captured", "Meera Patel",  "Shift Lead sign-off signature recorded"},
-            {"15 Feb 2026, 11:30:00 AM", "Job Completed",      "System",       "All tasks and reviews completed \u2013 job marked DONE"},
-            {"15 Feb 2026, 11:30:01 AM", "Report Generated",   "System",       "PDF report auto-generated and archived"},
-            {"15 Feb 2026, 11:30:02 AM", "Notification Sent",  "System",       "Completion notification sent to stakeholders"},
-        };
-
-        sb.append("<table class=\"parameter-table\">");
-        sb.append("<thead><tr><th style=\"width:22%\">Timestamp</th><th style=\"width:18%\">Action</th>")
-            .append("<th style=\"width:16%\">User</th><th style=\"width:44%\">Details</th></tr></thead><tbody>");
-        for (String[] entry : auditEntries) {
-            appendTableRow(sb, entry);
-        }
-        sb.append("</tbody></table>");
-
-        return sb.toString();
-    }
-
-    // ── SVG helpers for sample appendices ──
-
-    private static String buildThumbnailSvg(String label, String color, String bg) {
-        return "<svg xmlns='http://www.w3.org/2000/svg' width='300' height='200'>"
-            + "<rect width='300' height='200' fill='" + bg + "' rx='8'/>"
-            + "<rect x='10' y='10' width='280' height='150' fill='" + color + "' rx='6' opacity='0.3'/>"
-            + "<text x='150' y='105' text-anchor='middle' font-family='Helvetica' font-size='16' fill='" + color + "'>" + label + "</text>"
-            + "<text x='150' y='185' text-anchor='middle' font-family='Helvetica' font-size='10' fill='#666'>300 x 200 px</text>"
-            + "</svg>";
-    }
-
-    private static String buildEnlargedSvg(String label, String color, String bg) {
-        return "<svg xmlns='http://www.w3.org/2000/svg' width='400' height='280'>"
-            + "<rect width='400' height='280' fill='" + bg + "' rx='10'/>"
-            + "<rect x='15' y='15' width='370' height='220' fill='" + color + "' rx='8' opacity='0.25'/>"
-            + "<circle cx='200' cy='120' r='50' fill='" + color + "' opacity='0.4'/>"
-            + "<text x='200' y='128' text-anchor='middle' font-family='Helvetica' font-size='18' fill='" + color + "'>" + label + "</text>"
-            + "<text x='200' y='265' text-anchor='middle' font-family='Helvetica' font-size='10' fill='#666'>400 x 280 px \u2014 enlarged view</text>"
-            + "</svg>";
-    }
-
-    private static String buildSignatureSvg(String name) {
-        return "<svg xmlns='http://www.w3.org/2000/svg' width='200' height='60'>"
-            + "<rect width='200' height='60' fill='#fafafa' rx='4'/>"
-            + "<path d='M 15 40 Q 40 10, 70 35 T 130 30 T 185 38' fill='none' stroke='#1a237e' stroke-width='2' stroke-linecap='round'/>"
-            + "<text x='100' y='55' text-anchor='middle' font-family='Georgia,serif' font-size='8' fill='#999'>" + escapeHtml(name) + "</text>"
-            + "</svg>";
-    }
-
-    private static String svgToDataUri(String svg) {
-        return "data:image/svg+xml;base64," + Base64.getEncoder().encodeToString(svg.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static void appendImageCard(StringBuilder sb, String svg, String label, String style) {
-        sb.append("<div style=\"text-align:center;\">")
-            .append("<img src=\"").append(svgToDataUri(svg)).append("\" class=\"pdf-inline-image\" style=\"").append(style)
-            .append("\" alt=\"").append(escapeHtml(label)).append("\">")
-            .append("<div style=\"font-size:9pt;color:#555;margin-top:1mm;\">").append(escapeHtml(label)).append("</div>")
-            .append("</div>");
-    }
-
-    private static void appendTableRow(StringBuilder sb, String[] cells) {
-        sb.append("<tr>");
-        for (String cell : cells) {
-            sb.append("<td>").append(cell).append("</td>");
-        }
-        sb.append("</tr>");
     }
 
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(

@@ -1,68 +1,37 @@
-# Playwright PDF JMeter Load Test
+# Playwright PDF + JMeter Load Test
 
-Load-test local Playwright PDF rendering via JMeter.
-
-## Architecture
-
-```
-JMeter (threads) → GET http://localhost:8080/pdf?jobId=XXX → HTTP Server → Playwright renders PDF → Returns PDF bytes
-```
+Renders job report PDFs locally via Playwright and exposes an HTTP endpoint for JMeter load testing.
 
 ## Setup
 
-1. Clone and build:
-   ```bash
-   git clone https://github.com/mridul-leucine/playwright-pdf-jmeter.git
-   cd playwright-pdf-jmeter
-   ```
-
-2. Add your token in `config.json`:
+1. Add your token in `config.json`:
    ```json
    { "token": "Bearer eyJ..." }
    ```
+   Or run `./gradlew run --args="--login"` to login via browser.
 
-3. Install Playwright browsers (first time only):
-   ```bash
-   ./gradlew run --args="--login"
-   ```
+2. Install Playwright browsers (first time): `./gradlew run --args="--login"`
 
-## Run
+## Usage
 
-### Option 1: Self-contained JMeter test (recommended)
-Open `jmeter/pdf-local-test.jmx` in JMeter GUI and click Play. The test plan auto-starts and stops the server.
-
-### Option 2: Manual server + JMeter
-
-**Terminal 1 — Start server:**
+**Start HTTP server (for JMeter):**
 ```bash
 ./gradlew run --args="--server"
 ```
 
-**Terminal 2 — Run JMeter CLI:**
+**Render a single PDF:**
 ```bash
-jmeter -n -t jmeter/pdf-local-test.jmx -l jmeter/results.jtl -e -o jmeter/report/
+./gradlew run --args="--jobId=722492974613180416"
 ```
 
-### Option 3: Manual test
-```bash
-./gradlew run --args="--server"
-# In another terminal or browser:
-curl http://localhost:8080/pdf?jobId=722492974613180416 -o test.pdf
-```
+**JMeter test:**
+Open `jmeter/pdf-local-test.jmx` in JMeter and run.
 
-## CLI Flags
+## Flags
 
 | Flag | Description |
 |------|-------------|
-| `--server` | Start HTTP server for JMeter |
-| `--port=N` | Server port (default 8080) |
-| `--local` | Render single PDF locally |
-| `--benchmark --n=100` | Benchmark N renders |
+| `--server` | Start HTTP server on port 8080 |
+| `--port=N` | Custom server port |
 | `--login` | Browser login to get token |
-
-## JMeter Test Plan
-
-- **5 threads, 2 loops** = 10 PDF requests
-- CSV-driven job IDs from `jmeter/job-ids.csv`
-- Assertions: HTTP 200 + Content-Type application/pdf
-- Listeners: Summary Report, Aggregate Report, View Results Tree
+| `--jobId=ID` | Render specific job |

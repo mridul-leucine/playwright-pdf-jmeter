@@ -17,25 +17,12 @@ public final class DemoConfig {
         "722485307568074752"
     );
 
-    public static final Path PROJECT_ROOT = resolveProjectRoot();
+    public static final Path PROJECT_ROOT = Paths.get(System.getProperty("user.dir"));
     public static final Path OUTPUT_DIR = PROJECT_ROOT.resolve("output");
     public static final Path CONFIG_PATH = PROJECT_ROOT.resolve("config.json");
 
     public static final int API_TIMEOUT_SECONDS = 30;
-    public static final int PDF_DOWNLOAD_TIMEOUT_SECONDS = 120;
 
     private DemoConfig() {
-    }
-
-    private static Path resolveProjectRoot() {
-        Path current = Paths.get(System.getProperty("user.dir"));
-        if (current.getFileName().toString().equals("pdf-demo")) {
-            return current;
-        }
-        Path pdfDemo = current.resolve("pdf-demo");
-        if (pdfDemo.toFile().isDirectory()) {
-            return pdfDemo;
-        }
-        return current;
     }
 }
